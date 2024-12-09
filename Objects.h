@@ -58,7 +58,7 @@ public:
         for(int i = 0; i < Obstacle_nums; ++i){
             int x = dist_obstacle_x(gen);
             int y = dist_obstacle_y(gen);
-            if (x > 0 && x < width - 1 && y > 0 && y < height - 1) {
+            if (x > 0 && x < width - 1 && y > 0 && y < height - 1 && x != 1 && y != 1) {
                 grid[y][x] = wall; // 障礙物用 '#' 表示
             }
         }
@@ -75,22 +75,28 @@ public:
     //     }
     // }
     void display() {
+        std::lock_guard<std::mutex> lock(mtx);
         for (int i = 0; i < height; ++i) {
             for (int j = 0; j < width; ++j) {
                 mvaddch(i, j, grid[i][j]);  
+            }
         }
+        refresh(); 
     }
-    refresh(); 
-}
 
+    void display_changes(int x1, int y1, int x2, int y2){
+        mvaddch(y1, x1, grid[y1][x1]);
+        mvaddch(y2, x2, grid[y2][x2]);    
+        refresh(); 
+    }
 
     bool isWithinBounds(int x, int y) const {
         return x >= 1 && x < width - 1 && y >= 1 && y < height - 1; // 不包括邊界
     }
 
     void setCell(int x, int y, char value) {
-        std::lock_guard<std::mutex> lock(mtx); // 鎖定地圖資料
         if (isWithinBounds(x, y)) { // 不允許修改邊界
+            std::lock_guard<std::mutex> lock(mtx);
             grid[y][x] = value;
         }
     }
@@ -105,16 +111,25 @@ class Tank {
 private:
     int x, y; // 坦克的位置
     char symbol; // 坦克的符號，例如 'T'
+    char direction;
+    int health;
+    char bullet = '*';
     std::mutex mtx; // 用來保護坦克位置的互斥鎖
 
 public:
-    Tank(int startX, int startY, char sym) : x(startX), y(startY), symbol(sym) {}
+    Tank(int startX, int startY, char sym, int hp) : x(startX), y(startY), symbol(sym), health(hp) {
+        direction = 's';
+    }
 
     void move(int dx, int dy, Map& map) {
-        std::lock_guard<std::mutex> lock(mtx); // 鎖定坦克資料
+        std::unique_lock<std::mutex> lock(mtx); // 鎖定坦克資料
         int newX = x + dx;
         int newY = y + dy;
-
+        if(dx == -1) direction = 'a';
+        else if(dx == 1) direction = 'd';
+        else if(dy == -1) direction = 'w';
+        else if(dy == 1) direction = 's';
+        lock.unlock();
         // 檢查是否在地圖範圍內，且新位置不是障礙物
         if (map.isWithinBounds(newX, newY) && map.getCell(newX, newY) == map.path) {
             map.setCell(x, y, map.path);
@@ -128,6 +143,66 @@ public:
     void render(Map& map) {
         std::lock_guard<std::mutex> lock(mtx); // 鎖定坦克資料
         map.setCell(x, y, symbol); // 在地圖上顯示坦克
+    }
+
+    void shoot(Map& map){
+        std::unique_lock<std::mutex> lock(mtx);
+        int bullet_x = x;
+        int bullet_y = y;
+        char d = direction;
+        lock.unlock();
+        switch(d){
+            case 'a':
+                bullet_x--;
+                while(map.isWithinBounds(bullet_x, bullet_y) && map.getCell(bullet_x, bullet_y) == map.path){
+                    map.setCell(bullet_x, bullet_y, bullet);
+                    // map.display();
+                    map.display_changes(bullet_x, bullet_y, bullet_x+1, bullet_y);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    map.setCell(bullet_x, bullet_y, map.path);
+                    bullet_x--;
+                }
+                break;
+            case 'd':
+                bullet_x++;
+                while(map.isWithinBounds(bullet_x, bullet_y) && map.getCell(bullet_x, bullet_y) == map.path){
+                    map.setCell(bullet_x, bullet_y, bullet);
+                    // map.display();
+                    map.display_changes(bullet_x, bullet_y, bullet_x-1, bullet_y);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    map.setCell(bullet_x, bullet_y, map.path);
+                    bullet_x++;
+                }
+                break;
+            case 'w':
+                bullet_y--;
+                while(map.isWithinBounds(bullet_x, bullet_y) && map.getCell(bullet_x, bullet_y) == map.path){
+                    map.setCell(bullet_x, bullet_y, bullet);
+                    // map.display();
+                    map.display_changes(bullet_x, bullet_y, bullet_x, bullet_y+1);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    map.setCell(bullet_x, bullet_y, map.path);
+                    bullet_y--;
+                }
+                break;
+            case 's':
+                bullet_y++;
+                while(map.isWithinBounds(bullet_x, bullet_y) && map.getCell(bullet_x, bullet_y) == map.path){
+                    map.setCell(bullet_x, bullet_y, bullet);
+                    // map.display();
+                    map.display_changes(bullet_x, bullet_y, bullet_x, bullet_y-1);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    map.setCell(bullet_x, bullet_y, map.path);
+                    bullet_y++;
+                }
+                break;
+        }
+        map.display();
+
+    }
+
+    bool is_alive() {
+        return health > 0;
     }
 
     int getX() const { return x; }
