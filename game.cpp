@@ -9,7 +9,8 @@ std::mutex bulletMutex;
 std::condition_variable bulletCondition;
 
 bool gameRunning = true;
-bool bulletFired = false;
+bool bulletFired = false;  // fired
+bool bulletActive = false; // constrain that only one bullet can exist
 
 void bulletController(Tank& playerTank, Map& gameMap){
     while (true) {
@@ -18,10 +19,13 @@ void bulletController(Tank& playerTank, Map& gameMap){
 
         if (!gameRunning) break;
 
-        playerTank.shoot(gameMap);
-        bulletFired = false;
-
+        bulletActive = true;
         lock.unlock();
+        playerTank.shoot(gameMap);
+
+        lock.lock();
+        bulletActive = false;
+        bulletFired = false;
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
     
@@ -29,11 +33,10 @@ void bulletController(Tank& playerTank, Map& gameMap){
 
 void updateGameLogic(Tank& playerTank, Map& gameMap) {
     char command;
-
     gameMap.display();
 
     while ((command = getch()) != 'q'){
-        // std::cin >> command;
+        
         if(command == KEY_UP ||command == 'W'|| command == 'w')
             playerTank.move(0, -1, gameMap); // up
         else if(command == KEY_LEFT || command == 'A' || command == 'a')
@@ -42,10 +45,13 @@ void updateGameLogic(Tank& playerTank, Map& gameMap) {
             playerTank.move(0, 1, gameMap); // down
         else if(command == KEY_RIGHT || command == 'D' || command == 'd')
             playerTank.move(1, 0, gameMap);  // right
-        else if(command == ' '){
+        else if(command == ' ' ){
             std::lock_guard<std::mutex> lock(bulletMutex);
-            bulletFired = true;
-            bulletCondition.notify_one();
+            if(!bulletActive){
+                bulletFired = true;
+                bulletCondition.notify_one();
+            }
+            
         }
 
         gameMap.display();

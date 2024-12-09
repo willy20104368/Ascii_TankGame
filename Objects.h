@@ -85,6 +85,7 @@ public:
     }
 
     void display_changes(int x1, int y1, int x2, int y2){
+        std::lock_guard<std::mutex> lock(mtx);
         mvaddch(y1, x1, grid[y1][x1]);
         mvaddch(y2, x2, grid[y2][x2]);    
         refresh(); 
@@ -136,7 +137,7 @@ public:
             x = newX;
             y = newY;
             map.setCell(x, y, symbol);
-            
+            map.display();
         }
     }
 
@@ -156,8 +157,8 @@ public:
                 bullet_x--;
                 while(map.isWithinBounds(bullet_x, bullet_y) && map.getCell(bullet_x, bullet_y) == map.path){
                     map.setCell(bullet_x, bullet_y, bullet);
-                    // map.display();
-                    map.display_changes(bullet_x, bullet_y, bullet_x+1, bullet_y);
+                    map.display();
+                    // map.display_changes(bullet_x, bullet_y, bullet_x+1, bullet_y);
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
                     map.setCell(bullet_x, bullet_y, map.path);
                     bullet_x--;
@@ -167,8 +168,8 @@ public:
                 bullet_x++;
                 while(map.isWithinBounds(bullet_x, bullet_y) && map.getCell(bullet_x, bullet_y) == map.path){
                     map.setCell(bullet_x, bullet_y, bullet);
-                    // map.display();
-                    map.display_changes(bullet_x, bullet_y, bullet_x-1, bullet_y);
+                    map.display();
+                    // map.display_changes(bullet_x, bullet_y, bullet_x-1, bullet_y);
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
                     map.setCell(bullet_x, bullet_y, map.path);
                     bullet_x++;
@@ -178,8 +179,8 @@ public:
                 bullet_y--;
                 while(map.isWithinBounds(bullet_x, bullet_y) && map.getCell(bullet_x, bullet_y) == map.path){
                     map.setCell(bullet_x, bullet_y, bullet);
-                    // map.display();
-                    map.display_changes(bullet_x, bullet_y, bullet_x, bullet_y+1);
+                    map.display();
+                    // map.display_changes(bullet_x, bullet_y, bullet_x, bullet_y+1);
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
                     map.setCell(bullet_x, bullet_y, map.path);
                     bullet_y--;
@@ -189,8 +190,8 @@ public:
                 bullet_y++;
                 while(map.isWithinBounds(bullet_x, bullet_y) && map.getCell(bullet_x, bullet_y) == map.path){
                     map.setCell(bullet_x, bullet_y, bullet);
-                    // map.display();
-                    map.display_changes(bullet_x, bullet_y, bullet_x, bullet_y-1);
+                    map.display();
+                    // map.display_changes(bullet_x, bullet_y, bullet_x, bullet_y-1);
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
                     map.setCell(bullet_x, bullet_y, map.path);
                     bullet_y++;
