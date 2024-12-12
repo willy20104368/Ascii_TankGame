@@ -7,6 +7,7 @@
 #include <random>
 #include <stdlib.h>
 #include <stdio.h>
+#include <queue>
 
 class Map {
 private:
@@ -116,10 +117,12 @@ private:
     int health;
     std::mutex mtx; // tank mutex
     int tank_id;
+    // bool alive;
 
 public:
     Tank(int startX, int startY, char sym, int hp, int id) : x(startX), y(startY), symbol(sym), health(hp), tank_id(id){
         direction = 's';
+        // alive = true;
     }
      
     void move(int dx, int dy, Map& map) {
@@ -163,6 +166,22 @@ public:
     int getY() const{
         return y;
     }
+
+    void attacked(Map& map){
+        std::unique_lock<std::mutex> lock(mtx); 
+        health--;
+
+        map.setCell(x, y, map.path);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        map.setCell(x, y, symbol);
+        
+    }
+
+    void killed(Map& map){
+        map.setCell(x, y, map.path);
+        std::unique_lock<std::mutex> lock(mtx); 
+        // alive = false;
+    }
 };
 
 class Bullet{
@@ -172,6 +191,7 @@ private:
     char symbol;
     char direction;
     int owner_id;
+    std::mutex mtx;
 public:
     Bullet(int x, int y, int owner_id, int direction){
         this->owner_id = owner_id;
@@ -184,12 +204,16 @@ public:
     void shoot(Map& map){
         switch(direction){
             case 'a':
+                mtx.lock();
                 x--;
+                mtx.unlock();
                 while(map.isWithinBounds(x, y) && map.getCell(x, y) == map.path){
                     map.setCell(x, y, symbol);
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
                     map.setCell(x, y, map.path);
+                    mtx.lock();
                     x--;
+                    mtx.unlock();
                 }
                 break;
             case 'd':
@@ -198,7 +222,9 @@ public:
                     map.setCell(x, y, symbol);
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
                     map.setCell(x, y, map.path);
+                    mtx.lock();
                     x++;
+                    mtx.unlock();
                 }
                 break;
             case 'w':
@@ -207,7 +233,9 @@ public:
                     map.setCell(x, y, symbol);
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
                     map.setCell(x, y, map.path);
+                    mtx.lock();
                     y--;
+                    mtx.unlock();
                 }
                 break;
             case 's':
@@ -216,7 +244,9 @@ public:
                     map.setCell(x, y, symbol);
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
                     map.setCell(x, y, map.path);
+                    mtx.lock();
                     y++;
+                    mtx.unlock();
                 }
                 break;
         }
@@ -224,13 +254,24 @@ public:
 
     }
 
+    int getX() const{ 
+        return x; 
+    }
+    int getY() const{
+        return y;
+    }
+    int getId() const{
+        return owner_id;
+    }
 };
 
 class ObjectsPool{
 private:
     std::vector<Tank*> Tankpool;
+    std::queue<Bullet*> Bulletpool;
     std::vector<char> tank_symbol = {'O', 'A', 'T', 'X'};
     std::mutex t_mtx;
+    std::mutex b_mtx;
     int tank_nums = 0;
 
 public:
@@ -257,10 +298,16 @@ public:
         }
     }
     
+    void addBullet(int x, int y, int id, char d){
+        std::lock_guard<std::mutex> lock(b_mtx);
+        Bulletpool.push(new Bullet(x, y, id, d));
+    }
+
     ~ObjectsPool() {
         for (Tank* tank : Tankpool) {
             delete tank;
         }
+        
     }
 
     Tank* getplayer(){
@@ -270,6 +317,24 @@ public:
     std::vector<Tank*> getTankPool(){
         std::lock_guard<std::mutex> lock(t_mtx);
         return Tankpool;
+    }
+    std::queue<Bullet*> getBulletPool(){
+        std::lock_guard<std::mutex> lock(b_mtx);
+        return Bulletpool;
+    }
+    Bullet* getBullet(){
+        std::lock_guard<std::mutex> lock(b_mtx);
+        if(!Bulletpool.empty()){
+            return Bulletpool.front();  
+        }
+        else return nullptr;
+          
+    }
+    void delBullet(){
+        std::lock_guard<std::mutex> lock(b_mtx);
+        Bullet* tmp = Bulletpool.front();
+        delete tmp;
+        Bulletpool.pop();
     }
     
 };

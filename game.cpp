@@ -1,9 +1,20 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
-#include "Objects.h"
 #include <ncurses.h>
 #include <condition_variable>
+#include "Objects.h"
+#include "logger.h"
+
+
+#define DEBUG
+
+#ifdef DEBUG
+    #define LOG(message) Logger::getInstance().writeLog(message)
+#else
+    #define LOG(message) // do nothing
+#endif
+
 
 std::mutex bulletMutex;                   
 std::condition_variable bulletCondition;
@@ -11,8 +22,10 @@ std::mutex tankMtx;
 std::mutex bulletMtx;
 
 bool gameRunning = true;
-// bool bulletFired = false;  // fired
+bool collision = false;  // collision
 bool bulletActive = false; // constrain that only one bullet can exist
+
+std::ofstream logFile("log.txt");
 
 // void bulletController(Tank& playerTank, Map& gameMap){
 //     while (true) {
@@ -33,35 +46,53 @@ bool bulletActive = false; // constrain that only one bullet can exist
     
 // }
 
-// void collisionDetector(){
-//     while(true){
-//         std::lock_guard<std::mutex> lock(tankMtx);
-//         for(auto const& t:Tankpool){
-//             std::lock_guard<std::mutex> lock(bulletMtx);
-//             for()
-//         }
-//     }
-// }
+void collisionDetector(ObjectsPool* objpool, Map& gameMap){
+    while(gameRunning){
+        // std::lock_guard<std::mutex> lock(bulletMutex);
+        // wait for bullet fired
+        // bulletCondition.wait(lock, [] { return !gameRunning || collision; });
 
-void bulletController(Bullet *b, Map& gameMap){
+        //detect the collision between bullet and tank
+        std::vector<Tank*> tankPool = objpool->getTankPool();
+        // std::queue<Bullet*> bulletPool = objpool->getBulletPool();
+        Bullet* b = objpool->getBullet();
+        if(b){
+            for(auto const& t:tankPool){
+                if(t->getId() != b->getId() && t->is_alive() && t->getX() == b->getX() && t->getY() == b->getY()){
+                    t->attacked(gameMap);
+                }
+                
+            }
+        }
+        // std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        
+    }
+    LOG("end collisionDetector.\n");
+}
+
+void bulletController(ObjectsPool* objpool, Map& gameMap){
     std::unique_lock<std::mutex> lock(bulletMutex);
     bulletActive = true;
     lock.unlock();
 
+    Bullet* b = objpool->getBullet();
     b->shoot(gameMap);
 
     lock.lock();
     bulletActive = false;
     lock.unlock();
     // bullet_pool.pop();
-    delete b;
+    objpool->delBullet();
+
+    LOG("end bulletController.\n" );
 }
 
 
-void updateGameLogic(Tank *t, Map& gameMap) {
+void updateGameLogic(ObjectsPool *objpool, Map& gameMap) {
 
     char command;
     bool bullet_active = false;
+    Tank *t = objpool->getplayer();
 
     while ((command = getch()) != 'q'){
         
@@ -78,9 +109,9 @@ void updateGameLogic(Tank *t, Map& gameMap) {
             bullet_active = bulletActive;
             lock.unlock();
             if(!bulletActive){
-                Bullet *b = new Bullet(t->getX(), t->getY(), t->getId(), t->getDirection());
-                std::thread bulletThread(bulletController, b, std::ref(gameMap));
-                std::unique_lock<std::mutex> lock(bulletMtx);
+                objpool->addBullet(t->getX(), t->getY(), t->getId(), t->getDirection());
+                LOG("create bulletController.\n" );
+                std::thread bulletThread(bulletController, objpool, std::ref(gameMap));
                 bulletThread.detach();
 
             }
@@ -99,24 +130,26 @@ void updateGameLogic(Tank *t, Map& gameMap) {
 
     std::lock_guard<std::mutex> lock(bulletMutex);
     gameRunning = false;
-    bulletCondition.notify_all();
+    LOG("end updateGameLogic.\n" );
+
+    // std::cout << "end !!!" << std::endl;
+    // bulletCondition.notify_all();
 }
 
 
 
 void renderGame(Map& gameMap){
-    while(true){
-        if (!gameRunning) break;
-
+    while(gameRunning){
         gameMap.display();
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
+    LOG("end renderGame.\n");
 }
 
 // controll ai tank moving
 void aiTankController(Tank *aiTank, Tank *playerTank, Map& gameMap){
     
-    while(aiTank->is_alive()){
+    while(aiTank->is_alive() && gameRunning){
         
         if (!gameRunning) break;
 
@@ -129,28 +162,44 @@ void aiTankController(Tank *aiTank, Tank *playerTank, Map& gameMap){
         if(dy < 0) aiTank->move(0, -1, gameMap); // up
         else if (dy > 0) aiTank->move(0, 1, gameMap); // down
         
-        // attact
+        // attack
         // if(abs(dx) <= 10 && abs(dy) <= 10){
         //     shoot
         // }
         std::this_thread::sleep_for(std::chrono::milliseconds(700)); // speed of ai tank
     }
-    
+    aiTank->killed(gameMap);
+    LOG("end aiTankController.\n");
 }
 
 int main(int argc, char** argv) {
 
-    int aiTank_n;
-    if(argc == 2){
-        int n = atoi(argv[1]);
-        if(n >= 0 && n <= 3)
-            aiTank_n = n;
-        else
-            aiTank_n = 0;
+    int aiTank_n = 2; // -n
+    int health = 1; // -h
+    if(argc > 1){
+        for(int i = 1; i < argc; i+=2){
+            // LOG(argv[i]);
+            if (argv[i][0] == '-') {
+                for (int j = 1; argv[i][j] != '\0'; j++){
+                    switch (argv[i][j]) {
+                        case 'n':
+                            aiTank_n = atoi(argv[i+1]);
+                            break;
+                        case 'h':
+                            health = atoi(argv[i+1]);
+                            break;
+                        default:
+                            aiTank_n = 2;
+                            health = 1;
+                    }
+                }
+            }
+        }
     }
-    else{
-        aiTank_n = 2;
-    }
+    std::string tmp1 = "health" + std::to_string(health);
+    std::string tmp2 = "aiTank_n:" + std::to_string(aiTank_n);
+    LOG(tmp1);
+    LOG(tmp2);
     // initialize tank & map
     initscr();
     cbreak();
@@ -174,7 +223,7 @@ int main(int argc, char** argv) {
     // playerTank->render(gameMap);
     // aiTank->render(gameMap);
     ObjectsPool* objpool = new ObjectsPool();
-    objpool->createTank(gameMap, aiTank_n);
+    objpool->createTank(gameMap, aiTank_n, health);
     std::vector<std::thread> ThreadPool;
     std::vector<Tank*> tankPool = objpool->getTankPool();
     for(int i = 1; i <= aiTank_n; ++i){
@@ -183,21 +232,27 @@ int main(int argc, char** argv) {
     
     gameMap.addObstacle();
 
-    std::thread logicThread(updateGameLogic, objpool->getplayer(), std::ref(gameMap));
+    std::thread logicThread(updateGameLogic, objpool, std::ref(gameMap));
     // std::thread bulletThread(bulletController, std::ref(playerTank), std::ref(gameMap));
     std::thread renderThread(renderGame, std::ref(gameMap));
     // std::thread aiTankThread(aiTankController, aiTank, playerTank, std::ref(gameMap));
-    
+    std::thread collisionThread(collisionDetector, objpool, std::ref(gameMap));
+
     logicThread.join();
     // bulletThread.join();
     renderThread.join();
+    collisionThread.join();
     // aiTankThread.join();
     for (auto& t : ThreadPool) {
         if (t.joinable()) { 
             t.join();
         }
     }
+    objpool->~ObjectsPool();
+    
     endwin();
+    LOG("end main.\n");
+    
     return 0;
 }
 

@@ -1,0 +1,26 @@
+[DEBUG] -n
+[DEBUG] -h
+[DEBUG] health2
+[DEBUG] aiTank_n:1
+[DEBUG] create bulletController.
+
+[DEBUG] end bulletController.
+
+[DEBUG] create bulletController.
+
+[DEBUG] end bulletController.
+
+[DEBUG] create bulletController.
+
+[DEBUG] end bulletController.
+
+[DEBUG] end aiTankController.
+
+[DEBUG] end collisionDetector.
+
+[DEBUG] end updateGameLogic.
+
+[DEBUG] end renderGame.
+
+[DEBUG] end main.
+
