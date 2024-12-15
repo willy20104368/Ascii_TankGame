@@ -210,13 +210,13 @@ int main(int argc, char** argv) {
     threadPool.enqueue([&]() { updateGameLogic(objpool, std::ref(gameMap)); });
     threadPool.enqueue([&]() { renderGame(std::ref(gameMap)); });
 
-    threadPool.enqueue([&]() { aiTankController(objpool, tankPool[1], tankPool[0], std::ref(gameMap)); });
-    threadPool.enqueue([&]() { aiTankController(objpool, tankPool[2], tankPool[0], std::ref(gameMap)); });
+    // threadPool.enqueue([&]() { aiTankController(objpool, tankPool[1], tankPool[0], std::ref(gameMap)); });
+    // threadPool.enqueue([&]() { aiTankController(objpool, tankPool[2], tankPool[0], std::ref(gameMap)); });
 
-    // bug? Segmentation fault (core dumped)
-    // for(int i = 1; i <= aiTank_n; ++i){
-    //     threadPool.enqueue([&]() { aiTankController(objpool, tankPool[i], tankPool[0], std::ref(gameMap)); });
-    // }
+    // if not ref i, it will cause Segmentation fault (core dumped)
+    for(int i = 1; i <= aiTank_n; ++i){
+        threadPool.enqueue([&, i]() { aiTankController(objpool, tankPool[i], tankPool[0], std::ref(gameMap)); });
+    }
     
     
     while (gameRunning) {
