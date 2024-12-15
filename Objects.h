@@ -8,34 +8,79 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <queue>
+#include <functional>
+#include <atomic>
+
+class ThreadPool {
+private:
+    std::vector<std::thread> workers;
+    std::queue<std::function<void()>> tasks;
+    std::mutex queueMutex;
+    std::condition_variable condition;
+    std::atomic<bool> stop;
+
+public:
+    ThreadPool(size_t threads) : stop(false) {
+        for (size_t i = 0; i < threads; ++i) {
+            workers.emplace_back([this] {
+                while (true) {
+                    std::function<void()> task;
+                    {
+                        std::unique_lock<std::mutex> lock(this->queueMutex);
+                        this->condition.wait(lock, [this] { return this->stop || !this->tasks.empty(); });
+                        if (this->stop && this->tasks.empty())
+                            return;
+                        task = std::move(this->tasks.front());
+                        this->tasks.pop();
+                    }
+                    task();
+                }
+            });
+        }
+    }
+
+    ~ThreadPool() {
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            stop = true;
+        }
+        condition.notify_all();
+        for (std::thread &worker : workers)
+            worker.join();
+    }
+
+    void enqueue(std::function<void()> task) {
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            tasks.emplace(task);
+        }
+        condition.notify_one();
+    }
+};
 
 class Map {
 private:
-    int width;
-    int height;
+    int width, height;
     std::vector<std::vector<char>> grid; // map
-    std::mutex mtx; // map mutex
-    int max_Obstacle_nums;
-    int min_Obstacle_nums;
+    std::mutex mapMtx; // map mutex
     std::random_device rd;
     std::mt19937 gen;
-    std::uniform_int_distribution<> dist_nums;
-    std::uniform_int_distribution<> dist_obstacle_x;
-    std::uniform_int_distribution<> dist_obstacle_y;
-    
+    std::uniform_int_distribution<> distX, distY, distObstacles;
+    int max_Obstacle_nums;
+    int min_Obstacle_nums;
 
 public:
-    char wall = '#';
-    char path = ' ';
+    const char wall = '#';
+    const char path = ' ';
     
 
     Map(int w, int h) : width(w), height(h){
         max_Obstacle_nums = (width - 1) * (height - 1) / 15;
         min_Obstacle_nums = (width - 1) * (height - 1) / 30;
         gen.seed(rd());
-        dist_nums = std::uniform_int_distribution<>(min_Obstacle_nums, max_Obstacle_nums);
-        dist_obstacle_x = std::uniform_int_distribution<>(1, width - 2);
-        dist_obstacle_y = std::uniform_int_distribution<>(1, height - 2);
+        distObstacles = std::uniform_int_distribution<>(min_Obstacle_nums, max_Obstacle_nums);
+        distX = std::uniform_int_distribution<>(1, width - 2);
+        distY = std::uniform_int_distribution<>(1, height - 2);
 
         // initialize map
         grid = std::vector<std::vector<char>>(height, std::vector<char>(width, path));
@@ -53,14 +98,15 @@ public:
         
     }
 
+
     // randomly add obstacle to map
     void addObstacle() {
-        int Obstacle_nums = dist_nums(gen);
-        std::lock_guard<std::mutex> lock(mtx); 
+        int Obstacle_nums = distObstacles(gen);
+        std::lock_guard<std::mutex> lock(mapMtx); 
         for(int i = 0; i < Obstacle_nums; ++i){
-            int x = dist_obstacle_x(gen);
-            int y = dist_obstacle_y(gen);
-            if (x > 0 && x < width - 1 && y > 0 && y < height - 1 && grid[y][x] == path)  {
+            int x = distX(gen);
+            int y = distY(gen);
+            if (grid[y][x] == path)  {
                 grid[y][x] = wall;
             }
         }
@@ -70,22 +116,12 @@ public:
     
     // refresh & display whole map
     void display() {
-        // std::lock_guard<std::mutex> lock(mtx);
-        mtx.lock();
+        std::lock_guard<std::mutex> lock(mapMtx);
         for (int i = 0; i < height; ++i) {
             for (int j = 0; j < width; ++j) {
                 mvaddch(i, j, grid[i][j]);  
             }
         }
-        refresh(); 
-        mtx.unlock();
-    }
-
-    // refresh two input cells
-    void display_changes(int x1, int y1, int x2, int y2){
-        std::lock_guard<std::mutex> lock(mtx);
-        mvaddch(y1, x1, grid[y1][x1]);
-        mvaddch(y2, x2, grid[y2][x2]);    
         refresh(); 
     }
 
@@ -97,14 +133,14 @@ public:
     // set objects
     void setCell(int x, int y, char value) {
         if (isWithinBounds(x, y)) {
-            std::lock_guard<std::mutex> lock(mtx);
+            std::lock_guard<std::mutex> lock(mapMtx);
             grid[y][x] = value;
         }
     }
     
     // get cell
     char getCell(int x, int y){
-    	std::lock_guard<std::mutex> lock(mtx);
+    	std::lock_guard<std::mutex> lock(mapMtx);
     	return grid[y][x];
     }
 };
@@ -120,20 +156,15 @@ private:
     // bool alive;
 
 public:
-    Tank(int startX, int startY, char sym, int hp, int id) : x(startX), y(startY), symbol(sym), health(hp), tank_id(id){
-        direction = 's';
-        // alive = true;
-    }
+    Tank(int startX, int startY, char sym, int hp, int id):
+        x(startX), y(startY), symbol(sym), health(hp), tank_id(id), direction('s'){}
+
      
     void move(int dx, int dy, Map& map) {
-        std::unique_lock<std::mutex> lock(mtx); 
+        std::lock_guard<std::mutex> lock(mtx); 
         int newX = x + dx;
         int newY = y + dy;
-        if(dx == -1) direction = 'a';
-        else if(dx == 1) direction = 'd';
-        else if(dy == -1) direction = 'w';
-        else if(dy == 1) direction = 's';
-        lock.unlock();
+        direction = (dx == -1 ? 'a' : dx == 1 ? 'd' : dy == -1 ? 'w' : 's');
         
         if (map.isWithinBounds(newX, newY) && map.getCell(newX, newY) == map.path) {
             map.setCell(x, y, map.path);
@@ -144,12 +175,12 @@ public:
     }
 
 
-    void render(Map& map) {
+    void render(Map& map){
         std::lock_guard<std::mutex> lock(mtx); 
         map.setCell(x, y, symbol);
     }
 
-    bool is_alive() {
+    bool is_alive() const{
         return health > 0;
     }
 
@@ -167,21 +198,25 @@ public:
         return y;
     }
 
-    void attacked(Map& map){
-        std::unique_lock<std::mutex> lock(mtx); 
+    void takeDamage(Map& map){
+        std::lock_guard<std::mutex> lock(mtx); 
         health--;
 
         map.setCell(x, y, map.path);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         map.setCell(x, y, symbol);
+
+        if(!is_alive()){
+            map.setCell(x, y, map.path);
+        }
         
     }
 
-    void killed(Map& map){
-        map.setCell(x, y, map.path);
-        std::unique_lock<std::mutex> lock(mtx); 
-        // alive = false;
-    }
+    // void killed(Map& map){
+    //     map.setCell(x, y, map.path);
+    //     std::unique_lock<std::mutex> lock(mtx); 
+    //     // alive = false;
+    // }
 };
 
 class Bullet{
@@ -192,6 +227,7 @@ private:
     char direction;
     int owner_id;
     std::mutex mtx;
+    
 public:
     Bullet(int x, int y, int owner_id, int direction){
         this->owner_id = owner_id;
@@ -201,15 +237,27 @@ public:
         symbol = '*';
     }
 
-    void shoot(Map& map){
+    bool collision(std::vector<Tank*> tanks, Map& map){
+        std::lock_guard<std::mutex> lock(mtx);
+        for(auto const& t:tanks){
+            if(t->getId() != owner_id && t->is_alive() && t->getX() == x && t->getY() == y){
+                t->takeDamage(map);
+                return false;
+            }
+                
+        }
+        return true;
+    }
+    
+    void shoot(std::vector<Tank*> tanks, Map& map){
         switch(direction){
             case 'a':
                 mtx.lock();
                 x--;
                 mtx.unlock();
-                while(map.isWithinBounds(x, y) && map.getCell(x, y) == map.path){
+                while(collision(tanks, map) && map.isWithinBounds(x, y) && map.getCell(x, y) == map.path){
                     map.setCell(x, y, symbol);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(60));
                     map.setCell(x, y, map.path);
                     mtx.lock();
                     x--;
@@ -218,9 +266,9 @@ public:
                 break;
             case 'd':
                 x++;
-                while(map.isWithinBounds(x, y) && map.getCell(x, y) == map.path){
+                while(collision(tanks, map) && map.isWithinBounds(x, y) && map.getCell(x, y) == map.path){
                     map.setCell(x, y, symbol);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(60));
                     map.setCell(x, y, map.path);
                     mtx.lock();
                     x++;
@@ -229,9 +277,9 @@ public:
                 break;
             case 'w':
                 y--;
-                while(map.isWithinBounds(x, y) && map.getCell(x, y) == map.path){
+                while(collision(tanks, map) && map.isWithinBounds(x, y) && map.getCell(x, y) == map.path){
                     map.setCell(x, y, symbol);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(60));
                     map.setCell(x, y, map.path);
                     mtx.lock();
                     y--;
@@ -240,9 +288,9 @@ public:
                 break;
             case 's':
                 y++;
-                while(map.isWithinBounds(x, y) && map.getCell(x, y) == map.path){
+                while(collision(tanks, map) && map.isWithinBounds(x, y) && map.getCell(x, y) == map.path){
                     map.setCell(x, y, symbol);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(60));
                     map.setCell(x, y, map.path);
                     mtx.lock();
                     y++;
@@ -292,7 +340,7 @@ public:
         for(int i = 1; i <= 3 && i <= tank_n; ++i){
             {
                 std::lock_guard<std::mutex> lock(t_mtx);
-                Tankpool.emplace_back(new Tank(1+5*i,1+5*i, tank_symbol[i], health, i));
+                Tankpool.emplace_back(new Tank(1+7*i,1+7*i, tank_symbol[i], health, i));
             }
             Tankpool[i]->render(map);
         }
@@ -310,6 +358,16 @@ public:
         
     }
 
+    // void processBullets(Map& map) {
+    //     std::lock_guard<std::mutex> lock(b_mtx);
+    //     auto bulletCount = Bulletpool.size();
+    //     while (bulletCount--) {
+    //         auto& bullet = Bulletpool.front();
+    //         bullet->shoot(map);
+    //         Bulletpool.pop();
+    //     }
+    // }
+
     Tank* getplayer(){
         std::lock_guard<std::mutex> lock(t_mtx); 
         return Tankpool[0];
@@ -325,7 +383,10 @@ public:
     Bullet* getBullet(){
         std::lock_guard<std::mutex> lock(b_mtx);
         if(!Bulletpool.empty()){
-            return Bulletpool.front();  
+            Bullet* bullet = (Bullet*) malloc(sizeof(Bullet));
+            bullet = std::move(Bulletpool.front());
+            Bulletpool.pop();
+            return bullet;  
         }
         else return nullptr;
           
