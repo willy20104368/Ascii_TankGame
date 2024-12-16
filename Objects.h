@@ -143,6 +143,13 @@ public:
     	std::lock_guard<std::mutex> lock(mapMtx);
     	return grid[y][x];
     }
+
+    int getwidth() const{ 
+        return width; 
+    }
+    int getheight() const{
+        return height;
+    }
 };
 
 class Tank {
@@ -212,11 +219,6 @@ public:
         
     }
 
-    // void killed(Map& map){
-    //     map.setCell(x, y, map.path);
-    //     std::unique_lock<std::mutex> lock(mtx); 
-    //     // alive = false;
-    // }
 };
 
 class Bullet{
@@ -320,7 +322,6 @@ private:
     std::vector<char> tank_symbol = {'O', 'A', 'T', 'X'};
     std::mutex t_mtx;
     std::mutex b_mtx;
-    int tank_nums = 0;
 
 public:
     ObjectsPool(){
@@ -328,19 +329,14 @@ public:
     }
     // automatically create player tank & at least one ai tank
     void createTank(Map& map, int tank_n=1, int health=1){
-        if(tank_n > 3) tank_n = 3;
-        tank_nums = tank_n + 1;
-        // create player tank
-        {
-            std::lock_guard<std::mutex> lock(t_mtx);
-            Tankpool.emplace_back(new Tank(1, 1, tank_symbol[0], health, 0));
-        }
-        Tankpool[0]->render(map);
-        // create ai tank
-        for(int i = 1; i <= 3 && i <= tank_n; ++i){
+
+        int width = map.getwidth(), height = map.getheight();
+        std::vector<std::pair<int,int>> pos = {{1,1}, {width-1, 1}, {1, height-1}, {width-2, height-1}};
+
+        for(int i = 0; i <= 3 && i <= tank_n; ++i){
             {
                 std::lock_guard<std::mutex> lock(t_mtx);
-                Tankpool.emplace_back(new Tank(1+7*i,1+7*i, tank_symbol[i], health, i));
+                Tankpool.emplace_back(new Tank(pos[i].first, pos[i].second, tank_symbol[i], health, i));
             }
             Tankpool[i]->render(map);
         }
@@ -355,18 +351,10 @@ public:
         for (Tank* tank : Tankpool) {
             delete tank;
         }
-        
+        while(!Bulletpool.empty()){
+            Bulletpool.pop();
+        }
     }
-
-    // void processBullets(Map& map) {
-    //     std::lock_guard<std::mutex> lock(b_mtx);
-    //     auto bulletCount = Bulletpool.size();
-    //     while (bulletCount--) {
-    //         auto& bullet = Bulletpool.front();
-    //         bullet->shoot(map);
-    //         Bulletpool.pop();
-    //     }
-    // }
 
     Tank* getplayer(){
         std::lock_guard<std::mutex> lock(t_mtx); 

@@ -1,77 +1,7 @@
-[DEBUG] 4
-[DEBUG] health3
-[DEBUG] aiTank_n:3
-[DEBUG] 1create AI bulletController.
-[DEBUG] end bulletController.
-
-[DEBUG] 1create AI bulletController.
-[DEBUG] end bulletController.
-
-[DEBUG] 1create AI bulletController.
-[DEBUG] end bulletController.
-
-[DEBUG] 2create AI bulletController.
-[DEBUG] end bulletController.
-
-[DEBUG] 1create AI bulletController.
-[DEBUG] 2create AI bulletController.
-[DEBUG] end bulletController.
-
-[DEBUG] end bulletController.
-
 [DEBUG] 2create AI bulletController.
 [DEBUG] end bulletController.
 
 [DEBUG] 2create AI bulletController.
-[DEBUG] 3create AI bulletController.
-[DEBUG] end bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] 2create AI bulletController.
-[DEBUG] 3create AI bulletController.
-[DEBUG] create bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] 2create AI bulletController.
-[DEBUG] 3create AI bulletController.
-[DEBUG] end bulletController.
-
-[DEBUG] create bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] 2create AI bulletController.
-[DEBUG] 3create AI bulletController.
-[DEBUG] end bulletController.
-
-[DEBUG] create bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] create bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] 2create AI bulletController.
-[DEBUG] end aiTankController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] create bulletController.
-
-[DEBUG] 2create AI bulletController.
-[DEBUG] end bulletController.
-
 [DEBUG] end bulletController.
 
 [DEBUG] 2create AI bulletController.
@@ -80,66 +10,16 @@
 [DEBUG] 2create AI bulletController.
 [DEBUG] end bulletController.
 
-[DEBUG] create bulletController.
-
 [DEBUG] 2create AI bulletController.
-[DEBUG] end bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] 2create AI bulletController.
-[DEBUG] end bulletController.
-
-[DEBUG] 1create AI bulletController.
-[DEBUG] 2create AI bulletController.
-[DEBUG] end bulletController.
-
-[DEBUG] create bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] create bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] create bulletController.
-
-[DEBUG] 1create AI bulletController.
-[DEBUG] end aiTankController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] create bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] 1create AI bulletController.
-[DEBUG] end bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] 1create AI bulletController.
-[DEBUG] end bulletController.
-
-[DEBUG] create bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] create bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] create bulletController.
-
-[DEBUG] end bulletController.
-
-[DEBUG] end aiTankController.
-
 [DEBUG] end updateGameLogic.
 
-[DEBUG] end renderGame.
+[DEBUG] end bulletController.
+
+[DEBUG] end aiTankController.
+
+[DEBUG] end aiTankController.
+
+[DEBUG] end aiTankController.
 
 [DEBUG] end main.
 

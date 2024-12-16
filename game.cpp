@@ -19,12 +19,78 @@
 std::mutex bulletMutex;                   
 std::vector<bool> bulletActive(4, false);
 std::atomic<bool> gameRunning(true);
-std::mutex collisionMutex;
+std::atomic<int> aiTank_n(1);
 std::ofstream logFile("log.txt");
-// ThreadPool threadPool(std::thread::hardware_concurrency());
 ThreadPool threadPool(12);
 
-// }
+std::condition_variable gameCondition;
+std::mutex gameMutex;
+
+
+void displayMenu(int &health) {
+    clear();
+    mvprintw(5, 10, "Welcome to Tank Game!");
+
+    // Validate AI Tank Count input
+    int aiTankCount = 0;
+    do {
+        mvprintw(7, 10, "Enter AI Tank Count (1~3): ");
+        clrtoeol(); // Clear line to handle overwrites
+        echo(); // Enable echoing of user input
+        char input[10];
+        getstr(input); // Get user input for AI Tank Count
+        try {
+            aiTankCount = std::stoi(input);
+        } catch (std::invalid_argument &) {
+            aiTankCount = 0; // Invalid input
+        }
+        if (aiTankCount < 1 || aiTankCount > 3) {
+            mvprintw(8, 10, "Invalid input. Please enter a number between 1 and 3.");
+            refresh();
+        }
+    } while (aiTankCount < 1 || aiTankCount > 3);
+
+    aiTank_n = aiTankCount;
+
+    // Validate Tank Health input
+    int tankHealth = 0;
+    do {
+        clear();
+        mvprintw(5, 10, "Welcome to Tank Game!");
+        mvprintw(7, 10, "Enter Tank Health (1~9): ");
+        clrtoeol(); // Clear line to handle overwrites
+        char input[10];
+        getstr(input); // Get user input for Tank Health
+        try {
+            tankHealth = std::stoi(input);
+        } catch (std::invalid_argument &) {
+            tankHealth = 0; // Invalid input
+        }
+        if (tankHealth < 1 || tankHealth > 9) {
+            mvprintw(8, 10, "Invalid input. Please enter a number between 1 and 9.");
+            refresh();
+        }
+    } while (tankHealth < 1 || tankHealth > 9);
+
+    health = tankHealth;
+    noecho(); // Disable echoing again
+
+    clear();
+    mvprintw(5, 10, "Settings Updated!");
+    mvprintw(7, 10, "AI Tank Count: %d", aiTankCount);
+    mvprintw(8, 10, "Tank Health: %d", health);
+    mvprintw(10, 10, "Press any key to start the game...");
+    refresh();
+    getch(); // Wait for user to press a key
+}
+
+void displayEnd(const char* s){
+    clear();
+    mvprintw(7, 10, s);
+    mvprintw(10, 10, "Press any key to end the game...");
+    refresh();
+    getch(); // Wait for user to press a key
+}
 
 // void collisionDetector(ObjectsPool* objpool, Map& gameMap){
 //     while(gameRunning){
@@ -78,8 +144,8 @@ void updateGameLogic(ObjectsPool *objpool, Map& gameMap) {
     bool bullet_active = false;
     Tank *t = objpool->getplayer();
 
-    while ((command = getch()) != 'q'){
-        
+    while (t->is_alive() && gameRunning){
+        command = getch();
         if(command == KEY_UP ||command == 'W'|| command == 'w')
             t->move(0, -1, gameMap); // up
         else if(command == KEY_LEFT || command == 'A' || command == 'a')
@@ -96,12 +162,13 @@ void updateGameLogic(ObjectsPool *objpool, Map& gameMap) {
                 objpool->addBullet(t->getX(), t->getY(), t->getId(), t->getDirection());
                 LOG("create bulletController.\n" );
                 threadPool.enqueue([&]() { bulletController(objpool, gameMap); });
-                // std::thread bulletThread(bulletController, objpool, std::ref(gameMap));
-                // bulletThread.detach();
 
             }
             
             
+        }
+        else if(command == 'q'){
+            break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
 
@@ -110,9 +177,6 @@ void updateGameLogic(ObjectsPool *objpool, Map& gameMap) {
 
     gameRunning = false;
     LOG("end updateGameLogic.\n" );
-
-    // std::cout << "end !!!" << std::endl;
-    // bulletCondition.notify_all();
 }
 
 
@@ -122,6 +186,11 @@ void renderGame(Map& gameMap){
         gameMap.display();
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
+    if(aiTank_n > 0)
+        displayEnd("You lose........");
+    else
+        displayEnd("You Win !!!");
+    gameCondition.notify_one();
     LOG("end renderGame.\n");
 }
 
@@ -158,60 +227,38 @@ void aiTankController(ObjectsPool* objpool, Tank *aiTank, Tank *playerTank, Map&
         std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // speed of ai tank
     }
     // aiTank->killed(gameMap);
+    aiTank_n--;
+    if(aiTank_n <= 0)
+        gameRunning = false;
     LOG("end aiTankController.\n");
 }
 
+
+
 int main(int argc, char** argv) {
 
-    int aiTank_n = 2; // -n
     int health = 1; // -h
-    if(argc > 1){
-        for(int i = 1; i < argc; i+=2){
-            // LOG(argv[i]);
-            if (argv[i][0] == '-') {
-                for (int j = 1; argv[i][j] != '\0'; j++){
-                    switch (argv[i][j]) {
-                        case 'n':
-                            aiTank_n = atoi(argv[i+1]);
-                            break;
-                        case 'h':
-                            health = atoi(argv[i+1]);
-                            break;
-                        default:
-                            aiTank_n = 2;
-                            health = 1;
-                    }
-                }
-            }
-        }
-    }
-    std::string tmp1 = "health" + std::to_string(health);
-    std::string tmp2 = "aiTank_n:" + std::to_string(aiTank_n);
-    LOG(std::to_string(std::thread::hardware_concurrency()));
-    LOG(tmp1);
-    LOG(tmp2);
-    // initialize tank & map
+    
     initscr();
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
 
-
+    displayMenu(health);
     // map setting
     Map gameMap(80, 30);
-    
+    gameMap.addObstacle();
+
     ObjectsPool* objpool = new ObjectsPool();
     objpool->createTank(gameMap, aiTank_n, health);
     std::vector<Tank*> tankPool = objpool->getTankPool();
 
     
-    gameMap.addObstacle();
+    
 
     threadPool.enqueue([&]() { updateGameLogic(objpool, std::ref(gameMap)); });
     threadPool.enqueue([&]() { renderGame(std::ref(gameMap)); });
 
-    // threadPool.enqueue([&]() { aiTankController(objpool, tankPool[1], tankPool[0], std::ref(gameMap)); });
-    // threadPool.enqueue([&]() { aiTankController(objpool, tankPool[2], tankPool[0], std::ref(gameMap)); });
 
     // if not ref i, it will cause Segmentation fault (core dumped)
     for(int i = 1; i <= aiTank_n; ++i){
@@ -219,12 +266,16 @@ int main(int argc, char** argv) {
     }
     
     
-    while (gameRunning) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    {
+        std::unique_lock<std::mutex> lock(gameMutex);
+        gameCondition.wait(lock, [] { return !gameRunning; });
     }
 
-    objpool->~ObjectsPool();
+    delete objpool;
     
+
+    // displayEnd();
+
     endwin();
     LOG("end main.\n");
     
