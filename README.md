@@ -1,6 +1,7 @@
 # Ascii Tank Game
 
 This is a tank game designed to practice C++ programming using Object-Oriented Programming (OOP) and multi-threading (with a thread pool).
+![image](https://github.com/willy20104368/Ascii_TankGame/blob/main/demo.png)
 
 ### Controls:
 Use 'W', 'A', 'S', 'D' to control the tank's movement.
