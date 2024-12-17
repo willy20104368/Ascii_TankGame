@@ -10,9 +10,9 @@ Press 'Q' to quit the game.
 You can set the number of AI tanks (1 ~ 3) and the health points of each tank (1 ~ 9) before the game starts.
 
 ### Getting start
-'''
+```
 git@github.com:willy20104368/Ascii_TankGame.git
 cd ./Ascii_TankGame
 make
 ./game
-'''
+```
