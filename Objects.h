@@ -113,13 +113,28 @@ public:
         
     }
 
-    
+
     // refresh & display whole map
     void display() {
         std::lock_guard<std::mutex> lock(mapMtx);
         for (int i = 0; i < height; ++i) {
             for (int j = 0; j < width; ++j) {
-                mvaddch(i, j, grid[i][j]);  
+                
+                if(grid[i][j] == '*'){
+                    attron(COLOR_PAIR(1));
+                    mvaddch(i, j, grid[i][j]);  
+                    attroff(COLOR_PAIR(1));
+                }
+                else if(grid[i][j] == wall || grid[i][j] == path){
+                    attron(COLOR_PAIR(3));
+                    mvaddch(i, j, grid[i][j]);  
+                    attroff(COLOR_PAIR(3));
+                }
+                else{
+                    attron(COLOR_PAIR(2));
+                    mvaddch(i, j, grid[i][j]);  
+                    attroff(COLOR_PAIR(2));
+                }
             }
         }
         refresh(); 
@@ -165,14 +180,14 @@ private:
 public:
     Tank(int startX, int startY, char sym, int hp, int id):
         x(startX), y(startY), symbol(sym), health(hp), tank_id(id), direction('s'){}
-
+        
      
     void move(int dx, int dy, Map& map) {
         std::lock_guard<std::mutex> lock(mtx); 
         int newX = x + dx;
         int newY = y + dy;
         direction = (dx == -1 ? 'a' : dx == 1 ? 'd' : dy == -1 ? 'w' : 's');
-        
+        symbol = (dx == -1 ? '<' : dx == 1 ? '>' : dy == -1 ? '^' : 'v');
         if (map.isWithinBounds(newX, newY) && map.getCell(newX, newY) == map.path) {
             map.setCell(x, y, map.path);
             x = newX;
@@ -185,6 +200,12 @@ public:
     void render(Map& map){
         std::lock_guard<std::mutex> lock(mtx); 
         map.setCell(x, y, symbol);
+        // avoid tanks getting trapped
+        if(map.isWithinBounds(x-1, y)) map.setCell(x-1, y, map.path);
+        if(map.isWithinBounds(x+1, y)) map.setCell(x+1, y, map.path);
+        if(map.isWithinBounds(x, y-1)) map.setCell(x, y-1, map.path);
+        if(map.isWithinBounds(x, y+1)) map.setCell(x, y+1, map.path);
+        
     }
 
     bool is_alive() const{
@@ -204,17 +225,25 @@ public:
     int getY() const{
         return y;
     }
+    
+    char getSymbol() const{
+        return symbol;
+    }
 
+    int getHealth() const{
+        return health;
+    }
     void takeDamage(Map& map){
         std::lock_guard<std::mutex> lock(mtx); 
         health--;
 
         map.setCell(x, y, map.path);
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
         map.setCell(x, y, symbol);
 
         if(!is_alive()){
             map.setCell(x, y, map.path);
+            symbol = 'x';
         }
         
     }
@@ -319,7 +348,7 @@ class ObjectsPool{
 private:
     std::vector<Tank*> Tankpool;
     std::queue<Bullet*> Bulletpool;
-    std::vector<char> tank_symbol = {'O', 'A', 'T', 'X'};
+    // std::vector<char> tank_symbol = {'O', 'A', 'T', 'X'};
     std::mutex t_mtx;
     std::mutex b_mtx;
 
@@ -336,7 +365,7 @@ public:
         for(int i = 0; i <= 3 && i <= tank_n; ++i){
             {
                 std::lock_guard<std::mutex> lock(t_mtx);
-                Tankpool.emplace_back(new Tank(pos[i].first, pos[i].second, tank_symbol[i], health, i));
+                Tankpool.emplace_back(new Tank(pos[i].first, pos[i].second, 'v', health, i));
             }
             Tankpool[i]->render(map);
         }

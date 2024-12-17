@@ -92,6 +92,10 @@ void displayEnd(const char* s){
     getch(); // Wait for user to press a key
 }
 
+void displayHealth(char symbol, int health, int x, int y) {
+    mvprintw(y, x, "Tank (%c): Health: %d", symbol, health);
+    refresh();
+}
 // void collisionDetector(ObjectsPool* objpool, Map& gameMap){
 //     while(gameRunning){
 //         // std::lock_guard<std::mutex> lock(bulletMutex);
@@ -181,9 +185,21 @@ void updateGameLogic(ObjectsPool *objpool, Map& gameMap) {
 
 
 
-void renderGame(Map& gameMap){
+void renderGame(ObjectsPool* objpool, Map& gameMap){
+    clear();
     while(gameRunning){
+        
         gameMap.display();
+        std::vector<Tank*> tankPool = objpool->getTankPool();
+        
+        int displayRow = 0;
+        for (Tank* tank : tankPool) {
+            char tankSymbol = tank->getSymbol();
+            int tankHealth = tank->getHealth();
+            
+            displayHealth(tankSymbol, tankHealth, 80, displayRow+=2);
+        }
+
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
     if(aiTank_n > 0)
@@ -224,7 +240,7 @@ void aiTankController(ObjectsPool* objpool, Tank *aiTank, Tank *playerTank, Map&
                 LOG(tmp);
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // speed of ai tank
+        std::this_thread::sleep_for(std::chrono::milliseconds(650)); // speed of ai tank
     }
     // aiTank->killed(gameMap);
     aiTank_n--;
@@ -245,6 +261,12 @@ int main(int argc, char** argv) {
     keypad(stdscr, TRUE);
 
     displayMenu(health);
+
+    start_color();
+    init_pair(1, COLOR_RED, COLOR_BLACK);   // bullet
+    init_pair(2, COLOR_GREEN, COLOR_BLACK); // tanks
+    init_pair(3, COLOR_WHITE, COLOR_BLACK); // wall
+
     // map setting
     Map gameMap(80, 30);
     gameMap.addObstacle();
@@ -252,12 +274,12 @@ int main(int argc, char** argv) {
     ObjectsPool* objpool = new ObjectsPool();
     objpool->createTank(gameMap, aiTank_n, health);
     std::vector<Tank*> tankPool = objpool->getTankPool();
-
+    
     
     
 
     threadPool.enqueue([&]() { updateGameLogic(objpool, std::ref(gameMap)); });
-    threadPool.enqueue([&]() { renderGame(std::ref(gameMap)); });
+    threadPool.enqueue([&]() { renderGame(objpool, std::ref(gameMap)); });
 
 
     // if not ref i, it will cause Segmentation fault (core dumped)
