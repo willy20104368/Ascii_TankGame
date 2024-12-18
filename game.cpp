@@ -1,7 +1,9 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
-#include <ncurses.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
 #include <condition_variable>
 #include "Objects.h"
 #include "logger.h"
@@ -15,6 +17,8 @@
     #define LOG(message) // do nothing
 #endif
 
+SDL_Window* window = nullptr;
+SDL_Renderer* renderer = nullptr;
 
 std::mutex bulletMutex;                   
 std::vector<bool> bulletActive(4, false);
@@ -27,101 +31,183 @@ std::condition_variable gameCondition;
 std::mutex gameMutex;
 
 
-void displayMenu(int &health) {
-    clear();
-    mvprintw(5, 10, "Welcome to Tank Game!");
-
-    // Validate AI Tank Count input
-    int aiTankCount = 0;
-    do {
-        mvprintw(7, 10, "Enter AI Tank Count (1~3): ");
-        clrtoeol(); // Clear line to handle overwrites
-        echo(); // Enable echoing of user input
-        char input[10];
-        getstr(input); // Get user input for AI Tank Count
-        try {
-            aiTankCount = std::stoi(input);
-        } catch (std::invalid_argument &) {
-            aiTankCount = 0; // Invalid input
-        }
-        if (aiTankCount < 1 || aiTankCount > 3) {
-            mvprintw(8, 10, "Invalid input. Please enter a number between 1 and 3.");
-            refresh();
-        }
-    } while (aiTankCount < 1 || aiTankCount > 3);
-
-    aiTank_n = aiTankCount;
-
-    // Validate Tank Health input
-    int tankHealth = 0;
-    do {
-        clear();
-        mvprintw(5, 10, "Welcome to Tank Game!");
-        mvprintw(7, 10, "Enter Tank Health (1~9): ");
-        clrtoeol(); // Clear line to handle overwrites
-        char input[10];
-        getstr(input); // Get user input for Tank Health
-        try {
-            tankHealth = std::stoi(input);
-        } catch (std::invalid_argument &) {
-            tankHealth = 0; // Invalid input
-        }
-        if (tankHealth < 1 || tankHealth > 9) {
-            mvprintw(8, 10, "Invalid input. Please enter a number between 1 and 9.");
-            refresh();
-        }
-    } while (tankHealth < 1 || tankHealth > 9);
-
-    health = tankHealth;
-    noecho(); // Disable echoing again
-
-    clear();
-    mvprintw(5, 10, "Settings Updated!");
-    mvprintw(7, 10, "AI Tank Count: %d", aiTankCount);
-    mvprintw(8, 10, "Tank Health: %d", health);
-    mvprintw(10, 10, "Press any key to start the game...");
-    refresh();
-    getch(); // Wait for user to press a key
+bool initSDL(int screenWidth, int screenHeight) {
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+        std::cerr << "Failed to initialize SDL: " << SDL_GetError() << std::endl;
+        return false;
+    }
+    if (TTF_Init() < 0) {
+        std::cerr << "Failed to initialize SDL_ttf: " << TTF_GetError() << std::endl;
+        return false;
+    }
+    window = SDL_CreateWindow("Tank Game", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, screenWidth, screenHeight, SDL_WINDOW_SHOWN);
+    if (!window) {
+        std::cerr << "Failed to create window: " << SDL_GetError() << std::endl;
+        return false;
+    }
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (!renderer) {
+        std::cerr << "Failed to create renderer: " << SDL_GetError() << std::endl;
+        return false;
+    }
+    return true;
 }
 
-void displayEnd(const char* s){
-    clear();
-    mvprintw(7, 10, s);
-    mvprintw(10, 10, "Press any key to end the game...");
-    refresh();
-    getch(); // Wait for user to press a key
+void closeSDL() {
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    TTF_Quit();
+    SDL_Quit();
 }
 
-void displayHealth(char symbol, int health, int x, int y) {
-    mvprintw(y, x, "Tank (%c): Health: %d", symbol, health);
-    refresh();
+void renderText(const std::string& message, int x, int y, SDL_Color color, TTF_Font* font) {
+    SDL_Surface* surface = TTF_RenderText_Solid(font, message.c_str(), color);
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_Rect rect = { x, y, surface->w, surface->h };
+    SDL_FreeSurface(surface);
+    SDL_RenderCopy(renderer, texture, nullptr, &rect);
+    SDL_DestroyTexture(texture);
 }
-// void collisionDetector(ObjectsPool* objpool, Map& gameMap){
-//     while(gameRunning){
-//         // std::lock_guard<std::mutex> lock(bulletMutex);
-//         // wait for bullet fired
-//         // bulletCondition.wait(lock, [] { return !gameRunning || collision; });
 
-//         //detect the collision between bullet and tank
-//         std::vector<Tank*> tankPool = objpool->getTankPool();
-//         // std::queue<Bullet*> bulletPool = objpool->getBulletPool();
-//         Bullet* b = objpool->getBullet();
-//         if(b){
-//             for(auto const& t:tankPool){
-//                 if(t->getId() != b->getId() && t->is_alive() && t->getX() == b->getX() && t->getY() == b->getY()){
-//                     if(t->getId() != 0)
-//                         t->takeDamage(gameMap);
-//                     std::string tmp = std::to_string(t->getId()) + "take damage.";
-//                     LOG(tmp);
-//                 }
-                
-//             }
-//         }
-//         // std::this_thread::sleep_for(std::chrono::milliseconds(1));
+char meunInput(bool &menuRunning){
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_QUIT) {
+            gameRunning = false;  // exit
+            menuRunning = false;
+        } 
+        else if (event.type == SDL_KEYDOWN) {
+            switch (event.key.keysym.sym) {
+                case SDLK_UP:
+                case SDLK_w:
+                    return 'w'; // up
+                case SDLK_DOWN:
+                case SDLK_s:
+                    return 's'; // down
+                case SDLK_RETURN:
+                    return 'x';
+                default:
+                    return 0; // do nothing
+            }
+        }
+    }
+    return 0;
+}
+
+void displayMenu(int& health, int& aiTankCount) {
+    TTF_Font* font = TTF_OpenFont("arial.ttf", 18);
+    if (!font) {
+        std::cerr << "Failed to load font: " << TTF_GetError() << std::endl;
+        return;
+    }
+
+    SDL_Color white = { 255, 255, 255, 255 };
+    bool menuRunning = true;
+    char key = 0;
+    char text1[100];
+    char text2[100];
+
+    while (menuRunning) {
+
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
         
-//     }
-//     LOG("end collisionDetector.\n");
-// }
+        while((key = meunInput(menuRunning))!='x'){
+            if(key == 's') aiTankCount = std::max(aiTankCount-1, 1);
+            else if(key == 'w') aiTankCount = std::min(aiTankCount+1, 3);
+            
+            SDL_RenderClear(renderer);
+            renderText("Welcome to Tank Game!", 100, 50, white, font);
+            sprintf(text1, "Set AI Tank number: %d", aiTankCount);
+            renderText(text1, 100, 100, white, font);
+            renderText("(use 'w' or '^' to increase number, 's' or 'v' to decrease number)", 100, 150, white, font);
+            SDL_RenderPresent(renderer);
+        }
+
+        renderText("Set Tank Health Point: 1(use 'w' or '^' to increase number, 's' or 'v' to decrease number)", 100, 150, white, font);
+        SDL_RenderPresent(renderer);
+
+        while((key = meunInput(menuRunning))!='x'){
+            if(key == 's') health = std::max(health-1, 1);
+            else if(key == 'w') health = std::min(health+1, 9);
+
+            SDL_RenderClear(renderer);
+            renderText("Welcome to Tank Game!", 100, 50, white, font);
+            renderText(text1, 100, 100, white, font);
+            sprintf(text2, "Set Tank Health Point: %d", health);
+            renderText(text2, 100, 150, white, font);
+            renderText("(use 'w' or '^' to increase number, 's' or 'v' to decrease number)", 100, 200, white, font);
+            SDL_RenderPresent(renderer);
+        }
+        SDL_RenderClear(renderer);
+        renderText("Press Enter to Start the Game", 100, 100, white, font);
+        SDL_RenderPresent(renderer);
+        while((key = meunInput(menuRunning))!='x'){}
+        menuRunning = false;
+
+
+    }
+
+    TTF_CloseFont(font);
+}
+
+void displayEnd(const char* message) {
+    TTF_Font* font = TTF_OpenFont("arial.ttf", 24);
+    if (!font) {
+        std::cerr << "Failed to load font: " << TTF_GetError() << std::endl;
+        return;
+    }
+
+    SDL_Color white = { 255, 255, 255, 255 };
+
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
+
+    renderText(message, 100, 100, white, font);
+    renderText("Press ESC to Quit", 100, 150, white, font);
+
+    SDL_RenderPresent(renderer);
+
+    bool endScreen = true;
+    while (endScreen) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) {
+                endScreen = false;
+                gameRunning = false;
+            } else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
+                endScreen = false;
+                gameRunning = false;
+            }
+        }
+    }
+
+    TTF_CloseFont(font);
+}
+
+
+void displayHealth(const std::vector<Tank*>& tankPool, SDL_Renderer* renderer, TTF_Font* font) {
+    SDL_Color white = {255, 255, 255, 255};
+    int x = 1210;  // x-axis
+    int y = 10;  // y-axis
+    for (const auto& tank : tankPool) {
+        if (tank->is_alive()) {
+            std::string text = "Tank " + std::to_string(tank->getId()) + "(" + tank->getSymbol()+ ")" + " HP: " + std::to_string(tank->getHealth());
+            
+            SDL_Surface* surface = TTF_RenderText_Solid(font, text.c_str(), white);
+            SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+
+            SDL_Rect rect = {x, y, surface->w, surface->h}; 
+            SDL_RenderCopy(renderer, texture, nullptr, &rect);
+
+            SDL_FreeSurface(surface);
+            SDL_DestroyTexture(texture);
+
+            y += 30; 
+        }
+    }
+}
+
 
 void bulletController(ObjectsPool* objpool, Map& gameMap){
 
@@ -132,13 +218,45 @@ void bulletController(ObjectsPool* objpool, Map& gameMap){
     lock.unlock();
 
     
-    b->shoot(objpool->getTankPool(), gameMap);
+    b->shoot(objpool->getTankPool(), gameMap, renderer);
 
     lock.lock();
     bulletActive[b->getId()] = false;
     lock.unlock();
   
     LOG("end bulletController.\n" );
+}
+
+
+char processInput() {
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_QUIT) {
+            gameRunning = false;  // exit
+        } else if (event.type == SDL_KEYDOWN) {
+            switch (event.key.keysym.sym) {
+                case SDLK_UP:
+                case SDLK_w:
+                    return 'w'; // up
+                case SDLK_DOWN:
+                case SDLK_s:
+                    return 's'; // down
+                case SDLK_LEFT:
+                case SDLK_a:
+                    return 'a'; // left
+                case SDLK_RIGHT:
+                case SDLK_d:
+                    return 'd'; // right
+                case SDLK_SPACE:
+                    return ' '; // shoot
+                case SDLK_q:
+                    return 'q'; // quit game
+                default:
+                    return 0; // do nothing
+            }
+        }
+    }
+    return 0; // do nothing
 }
 
 
@@ -149,14 +267,14 @@ void updateGameLogic(ObjectsPool *objpool, Map& gameMap) {
     Tank *t = objpool->getplayer();
 
     while (t->is_alive() && gameRunning){
-        command = getch();
-        if(command == KEY_UP ||command == 'W'|| command == 'w')
+        command = processInput();
+        if(command == 'w')
             t->move(0, -1, gameMap); // up
-        else if(command == KEY_LEFT || command == 'A' || command == 'a')
+        else if(command == 'a')
             t->move(-1, 0, gameMap); // left
-        else if(command == KEY_DOWN || command == 'S' || command == 's')
+        else if(command == 's')
             t->move(0, 1, gameMap); // down
-        else if(command == KEY_RIGHT || command == 'D' || command == 'd')
+        else if(command == 'd')
             t->move(1, 0, gameMap);  // right
         else if(command == ' ' ){
             std::unique_lock<std::mutex> lock(bulletMutex);
@@ -185,29 +303,33 @@ void updateGameLogic(ObjectsPool *objpool, Map& gameMap) {
 
 
 
-void renderGame(ObjectsPool* objpool, Map& gameMap){
-    clear();
-    while(gameRunning){
-        
-        gameMap.display();
-        std::vector<Tank*> tankPool = objpool->getTankPool();
-        
-        int displayRow = 0;
-        for (Tank* tank : tankPool) {
-            char tankSymbol = tank->getSymbol();
-            int tankHealth = tank->getHealth();
-            
-            displayHealth(tankSymbol, tankHealth, 80, displayRow+=2);
-        }
+void renderGame(Map& gameMap, ObjectsPool* objpool) {
 
+    TTF_Font* font = TTF_OpenFont("arial.ttf", 18);
+    if (!font) {
+        std::cerr << "Failed to load font: " << TTF_GetError() << std::endl;
+        return;
+    }
+
+    while (gameRunning) {
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+
+        gameMap.display(renderer);
+
+        std::vector<Tank*> tankPool = objpool->getTankPool();
+        displayHealth(tankPool, renderer, font);
+
+        SDL_RenderPresent(renderer);
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
-    if(aiTank_n > 0)
-        displayEnd("You lose........");
-    else
-        displayEnd("You Win !!!");
+
+    if (aiTank_n > 0) {
+        displayEnd("You lose...");
+    } else {
+        displayEnd("You Win!!!");
+    }
     gameCondition.notify_one();
-    LOG("end renderGame.\n");
 }
 
 // controll ai tank moving
@@ -224,12 +346,14 @@ void aiTankController(ObjectsPool* objpool, Tank *aiTank, Tank *playerTank, Map&
         if(dx < 0) aiTank->move(-1, 0, gameMap); // left
         else if (dx > 0) aiTank->move(1, 0, gameMap); // right
 
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
         if(dy < 0) aiTank->move(0, -1, gameMap); // up
         else if (dy > 0) aiTank->move(0, 1, gameMap); // down
         
 
         // attack
-        if (abs(dx) <= 10 && abs(dy) <= 10) {
+        if (abs(dx) <= 15 && abs(dy) <= 15) {
             std::unique_lock<std::mutex> lock(bulletMutex);
             bullet_active = bulletActive[id];
             lock.unlock();
@@ -240,9 +364,9 @@ void aiTankController(ObjectsPool* objpool, Tank *aiTank, Tank *playerTank, Map&
                 LOG(tmp);
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(650)); // speed of ai tank
+        std::this_thread::sleep_for(std::chrono::milliseconds(500)); // speed of ai tank
     }
-    // aiTank->killed(gameMap);
+
     aiTank_n--;
     if(aiTank_n <= 0)
         gameRunning = false;
@@ -250,36 +374,28 @@ void aiTankController(ObjectsPool* objpool, Tank *aiTank, Tank *playerTank, Map&
 }
 
 
-
 int main(int argc, char** argv) {
 
-    int health = 1; // -h
-    
-    initscr();
-    cbreak();
-    noecho();
-    keypad(stdscr, TRUE);
+    if (!initSDL(1400, 800)) {
+        return -1;
+    }
 
-    displayMenu(health);
+    int health = 1;
+    int aiTankCount = 1;
 
-    start_color();
-    init_pair(1, COLOR_RED, COLOR_BLACK);   // bullet
-    init_pair(2, COLOR_GREEN, COLOR_BLACK); // tanks
-    init_pair(3, COLOR_WHITE, COLOR_BLACK); // wall
+    displayMenu(health, aiTankCount);
 
-    // map setting
-    Map gameMap(80, 30);
+    aiTank_n = aiTankCount;
+    Map gameMap(60, 40);
     gameMap.addObstacle();
 
     ObjectsPool* objpool = new ObjectsPool();
-    objpool->createTank(gameMap, aiTank_n, health);
+    objpool->createTank(gameMap, aiTankCount, health);
+
     std::vector<Tank*> tankPool = objpool->getTankPool();
-    
-    
-    
 
     threadPool.enqueue([&]() { updateGameLogic(objpool, std::ref(gameMap)); });
-    threadPool.enqueue([&]() { renderGame(objpool, std::ref(gameMap)); });
+    threadPool.enqueue([&]() { renderGame(std::ref(gameMap), objpool); });
 
 
     // if not ref i, it will cause Segmentation fault (core dumped)
@@ -294,11 +410,8 @@ int main(int argc, char** argv) {
     }
 
     delete objpool;
-    
 
-    // displayEnd();
-
-    endwin();
+    closeSDL();
     LOG("end main.\n");
     
     return 0;

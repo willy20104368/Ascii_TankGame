@@ -1,6 +1,6 @@
 CC = g++
 CFLAGS = -std=c++17 -O2 -Wall -pthread
-LDFLAGS = -lncurses
+LDFLAGS = -lSDL2 -lSDL2_image -lSDL2_ttf
 
 TARGET = game
 SRCS = $(wildcard *.cpp)
